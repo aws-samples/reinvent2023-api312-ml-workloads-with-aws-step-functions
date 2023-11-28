@@ -3,14 +3,6 @@ Transform: AWS::Serverless-2016-10-31
 Description: AWS re:invent 2023 API312
 
 ##########################################################################
-#  Parameters                                                            #
-##########################################################################
-Parameters:
-  Version:
-    Type: String
-    Default: v1
-
-##########################################################################
 #  Globals                                                               #
 ##########################################################################
 Globals:
@@ -52,7 +44,7 @@ Resources:
   PrepareDatasetFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: !Sub "functions/${Version}/prepare_dataset/"
+      CodeUri: !Sub "functions/prepare_dataset/"
       AutoPublishAlias: live
       Environment:
         Variables:
@@ -75,7 +67,7 @@ Resources:
   PassThroughFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: !Sub "functions/${Version}/pass_through/"
+      CodeUri: !Sub "functions/pass_through/"
       AutoPublishAlias: live
 
   PassThroughFunctionLogGroup:
@@ -95,7 +87,7 @@ Resources:
     Type: AWS::Serverless::StateMachine
     Properties:
       Type: STANDARD
-      DefinitionUri: statemachine/v1/sfn-template.asl.json
+      DefinitionUri: statemachine/sfn-template.asl.json
       AutoPublishAlias: live
       Logging:
         Destinations:
@@ -174,7 +166,7 @@ Resources:
                 "type": "metric",
                 "properties": {
                   "metrics": [
-                    [ "AWS/States", "ExecutionTime", "StateMachineArn", "${MarketDataMLPipelineStateMachine}/eecd5a47-582a-371f-8596-f08ae2a3fa2e", { "label": "P100", "stat": "Maximum" } ],
+                    [ "AWS/States", "ExecutionTime", "StateMachineArn", "${MarketDataMLPipelineStateMachine}", { "label": "P100", "stat": "Maximum" } ],
                     [ "...", { "label": "P99", "stat": "p99" } ],
                     [ "...", { "label": "P90", "stat": "p90" } ]
                   ],
@@ -212,7 +204,7 @@ Resources:
                 "type": "metric",
                 "properties": {
                   "metrics": [
-                    [ "AWS/States", "ExecutionsFailed", "StateMachineArn", "${MarketDataMLPipelineStateMachine}/eecd5a47-582a-371f-8596-f08ae2a3fa2e" ],
+                    [ "AWS/States", "ExecutionsFailed", "StateMachineArn", "${MarketDataMLPipelineStateMachine}" ],
                     [ ".", "ExecutionsStarted", ".", "." ],
                     [ ".", "ExecutionsAborted", ".", "." ],
                     [ ".", "ExecutionsSucceeded", ".", "." ],
