@@ -1,6 +1,6 @@
 *.iml
 samconfig.toml
-TODO.md
+.DS_Store
 
 .aws-sam/
 .idea/
