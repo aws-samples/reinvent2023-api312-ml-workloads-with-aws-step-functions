@@ -53,9 +53,10 @@ Now, you copy the [NOAA Global Surface Summary of Day](https://aws.amazon.com/ma
 Let's first query for the S3 bucket name and store it in an local variable:
 ```bash
 export SOURCE_S3_BUCKET_NAME=$(aws cloudformation describe-stacks \
---stack-name reinvent2023-api312 \
---query 'Stacks[].Outputs[?OutputKey==`MarketDataSourceS3BucketName`].OutputValue' \
---output text)
+  --region us-east-1 \
+  --stack-name reinvent2023-api312 \
+  --query 'Stacks[].Outputs[?OutputKey==`MarketDataSourceS3BucketName`].OutputValue' \
+  --output text)
 ```
 
 Copy the complete dataset into the S3 bucket by running the command below (this will take a few hours):  
@@ -73,14 +74,16 @@ aws s3 sync --no-progress s3://noaa-gsod-pds/ s3://$SOURCE_S3_BUCKET_NAME/
 First, store the AWS Step Functions ARN (Amazon Resource Name) in a local variable for easy reuse:  
 ```bash
 export STEP_FUNCTIONS_ARN=$(aws cloudformation describe-stacks \
---stack-name reinvent2023-api312 \
---query 'Stacks[].Outputs[?OutputKey==`MarketDataMLPipelineStateMachine`].OutputValue' \
---output text)
+  --region us-east-1 \
+  --stack-name reinvent2023-api312 \
+  --query 'Stacks[].Outputs[?OutputKey==`MarketDataMLPipelineStateMachine`].OutputValue' \
+  --output text)
 ```
 
 Execute the Step Functions state machine and process the dataset from 1929 (21 files):  
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"1929/\"}" \
   | jq -r ".executionArn")
@@ -93,7 +96,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Now take a look at the execution status of this Step Functions execution:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 ---
@@ -107,6 +112,7 @@ Using the [Amazon S3 Console](https://s3.console.aws.amazon.com/s3/buckets), tak
 Rerun the Step Functions statemachine with a larger dataset to face the first challenge (the dataset from 1941 contains 402 files):
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"1941/\"}" \
   | jq -r ".executionArn")
@@ -115,7 +121,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 ---
@@ -136,6 +144,7 @@ As part of the set-up, you also provisioned a CloudWatch dashboard which visuali
 Before you tackle this challenge, rerun this Step Functions statemachine once more with an even larger dataset (the dataset from 1945 contains 1021 files):
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"1945/\"}" \
   | jq -r ".executionArn")
@@ -144,7 +153,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 You will experience, this State Machine execution takes again much longer to execute (more than 5 minutes), before it fails. This is now stopping you to process even larger datasets. Let's tackle this problem now.  
@@ -226,6 +237,7 @@ Now it's time to rerun the dataset from 1945 to verify, that we could
 Start a new Step Functions execution by executing:
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"1945/\"}" \
   | jq -r ".executionArn")
@@ -234,7 +246,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution and rerun this command until the `status` shows `SUCCEEDED`:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 ---
@@ -248,6 +262,7 @@ Using the [Amazon S3 Console](https://s3.console.aws.amazon.com/s3/buckets), tak
 Rerun the Step Function statemachine again with an even larger dataset from 2001 (containing 9,008 files):
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"2001/\"}" \
   | jq -r ".executionArn")
@@ -256,7 +271,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution and rerun this command until the `status` shows `SUCCEEDED`:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 It will take less than 5 minutes to run it. But before you move on to the next challenge and optimize the throughput for even larger datasets, that a look at the CloudWatch dashboard again to verify how much we improved so far:  
@@ -425,6 +442,7 @@ Finally, your updated Step Functions statemachine should look like this one:
 Now it's time to rerun the dataset from 2001 to verify, that we could speed up the execution again:
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"2001/\"}" \
   | jq -r ".executionArn")
@@ -433,7 +451,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution and rerun this command until the `status` shows `SUCCEEDED`:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 Now the statemachine execution is down from almost 5 minutes to 15 seconds!  
@@ -518,6 +538,7 @@ sam build \
 Now it's finally time to run the Step Functions statemachine with the complete dataset of more than 570,000 files, leveraging the Amazon S3 inventory file:  
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Key\": \"<S3 KEY TO THE S3 INVENTORY FILE>\"}" \
   | jq -r ".executionArn")
@@ -530,7 +551,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution and rerun this command until the `status` shows `SUCCEEDED`:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 You managed to prepare more than 570,000 files in just about 2 minutes! Check you CloudWatch dashboard as well, and you will see a peak throughput of about 440,000 files per minute!
@@ -605,6 +628,7 @@ sam build \
 Run the statemachine with the dataset from 1945 (containing 1021 files):
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"1945/\"}" \
   | jq -r ".executionArn")
@@ -613,7 +637,9 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution and rerun this command until the `status` shows `FAILED`:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 Take a look into your [S3 Console](https://s3.console.aws.amazon.com/s3/buckets) and navigate to the bucket which starts with the name `reinvent2023-api312-marketdatatargets3bucket`. Navigate to the prefix `execution-summary/1945/<UUID>/`. You should see a similar result like this (your result may vary a bit):  
@@ -631,7 +657,9 @@ aws stepfunctions redrive-execution \
 Check again the execution status of this Step Functions execution and rerun this command until the `status` shows `SUCCEEDED`:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 Go back to you S3 bucket `reinvent2023-api312-marketdatatargets3bucket` and navigate again to the prefix `execution-summary/1945/<UUID>/`. You will find a new prefix `Redrive-1/`. Explore the newly created files during the redrive.  
@@ -680,6 +708,7 @@ sam build \
 Run the statemachine with the dataset from 1945 (containing 1021 files):
 ```bash
 export EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region us-east-1 \
   --state-machine-arn $STEP_FUNCTIONS_ARN \
   --input "{\"Prefix\": \"1945/\"}" \
   | jq -r ".executionArn")
@@ -688,12 +717,16 @@ export EXECUTION_ARN=$(aws stepfunctions start-execution \
 Take again a look at the execution status of this Step Functions execution and rerun this command until the `status` shows `SUCCEEDED`:
 ```bash
 aws stepfunctions describe-execution \
-  --execution-arn $EXECUTION_ARN
+  --region us-east-1 \
+  --execution-arn $EXECUTION_ARN \
+  | jq .
 ```
 
 ```bash
 aws stepfunctions describe-map-run \
-  --map-run-arn <COPY MAP RUN FROM OUTPUT OF PREVIOUS describe-execution>
+  --region us-east-1 \
+  --map-run-arn <COPY MAP RUN FROM OUTPUT OF PREVIOUS describe-execution> \
+  | jq .
 ```
 
 Your output should look similar to the one below.  
