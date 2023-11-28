@@ -1,0 +1,91 @@
+{
+  "Comment": "AWS re:invent 2023 API312 - v2",
+  "StartAt": "Prepare Sourced Data",
+  "States": {
+    "Prepare Sourced Data": {
+      "Type": "Map",
+      "MaxConcurrency": 500,
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:listObjectsV2",
+        "Parameters": {
+          "Bucket": "${S3SourceBucket}",
+          "Prefix.$": "$.Prefix"
+        }
+      },
+      "ResultWriter": {
+        "Resource": "arn:aws:states:::s3:putObject",
+        "Parameters": {
+          "Bucket": "${S3TargetBucket}",
+          "Prefix.$": "States.Format('execution-summary/{}', $.Prefix)"
+        }
+      },
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "DISTRIBUTED",
+          "ExecutionType": "EXPRESS"
+        },
+        "StartAt": "Read File",
+        "States": {
+          "Read File": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
+            "Parameters": {
+              "Bucket": "${S3SourceBucket}",
+              "Key.$": "$.Key"
+            },
+            "ResultSelector": {
+              "Body.$": "$.Body"
+            },
+            "ResultPath": "$.File",
+            "Next": "Pre Process"
+          },
+          "Pre Process": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${PassThroughFunction}:live",
+              "Payload.$": "$"
+            },
+            "OutputPath": "$.Payload",
+            "Next": "Prepare Dataset"
+          },
+          "Prepare Dataset": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${PrepareDatasetFunction}:live",
+              "Payload.$": "$"
+            },
+            "OutputPath": "$.Payload",
+            "Next": "Stage Dataset"
+          },
+          "Stage Dataset": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:s3:putObject",
+            "Parameters": {
+              "Bucket": "${S3TargetBucket}",
+              "Key.$": "States.Format('prepared-dataset/{}', $.Key)",
+              "Body.$": "$.File.Body"
+            },
+            "ResultPath": null,
+            "Next": "Publish Event"
+          },
+          "Publish Event": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sns:publish",
+            "Parameters": {
+              "Message.$": "States.Format('prepared-dataset/{}', $.Key)",
+              "TopicArn": "${SNSTopic}"
+            },
+            "ResultPath": null,
+            "End": true
+          }
+        }
+      },
+      "Next": "Finish"
+    },
+    "Finish": {
+      "Type": "Succeed"
+    }
+  }
+}

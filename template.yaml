@@ -1,0 +1,286 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AWS re:invent 2023 API312
+
+##########################################################################
+#  Parameters                                                            #
+##########################################################################
+Parameters:
+  Version:
+    Type: String
+    Default: v1
+
+##########################################################################
+#  Globals                                                               #
+##########################################################################
+Globals:
+  Function:
+    Handler: app.lambda_handler
+    Timeout: 60
+    MemorySize: 1024
+    Runtime: python3.10
+
+##########################################################################
+#  Resources                                                             #
+##########################################################################
+Resources:
+  MarketDataSourceS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  MarketDataTargetS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+
+  EventNotificationSNSTopic:
+    Type: AWS::SNS::Topic
+
+
+  PrepareDatasetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: !Sub "functions/${Version}/prepare_dataset/"
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          S3_SOURCE_BUCKET: !Ref MarketDataSourceS3Bucket
+          S3_TARGET_BUCKET: !Ref MarketDataTargetS3Bucket
+          POWERTOOLS_METRICS_NAMESPACE: API312
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref MarketDataSourceS3Bucket
+        - S3CrudPolicy:
+            BucketName: !Ref MarketDataTargetS3Bucket
+
+  PrepareDatasetFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${PrepareDatasetFunction}"
+      RetentionInDays: 7
+
+
+  PassThroughFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: !Sub "functions/${Version}/pass_through/"
+      AutoPublishAlias: live
+
+  PassThroughFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${PassThroughFunction}"
+      RetentionInDays: 7
+
+
+  MarketDataMLPipelineStateMachineCloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /step-functions/market-data-ml-pipeline
+      RetentionInDays: 7
+
+  MarketDataMLPipelineStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      DefinitionUri: statemachine/v1/sfn-template.asl.json
+      AutoPublishAlias: live
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt MarketDataMLPipelineStateMachineCloudWatchLogsGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      DefinitionSubstitutions:
+        S3SourceBucket: !Ref MarketDataSourceS3Bucket
+        S3TargetBucket: !Ref MarketDataTargetS3Bucket
+        PassThroughFunction: !Ref PassThroughFunction
+        PrepareDatasetFunction: !Ref PrepareDatasetFunction
+        SNSTopic: !Ref EventNotificationSNSTopic
+      Policies:
+        - StepFunctionsExecutionPolicy:
+            StateMachineName: '*'
+        - S3CrudPolicy:
+            BucketName: !Ref MarketDataSourceS3Bucket
+        - S3CrudPolicy:
+            BucketName: !Ref MarketDataTargetS3Bucket
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PrepareDatasetFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref PassThroughFunction
+        - SNSPublishMessagePolicy:
+            TopicName: !Sub "${EventNotificationSNSTopic.TopicName}"
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogDelivery
+                - logs:GetLogDelivery
+                - logs:UpdateLogDelivery
+                - logs:DeleteLogDelivery
+                - logs:ListLogDeliveries
+                - logs:PutResourcePolicy
+                - logs:DescribeResourcePolicies
+                - logs:DescribeLogGroups
+              Resource: "*"
+
+
+  MarketDataMLPipelineDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardBody:
+        !Sub |
+          {
+            "start": "-PT1H",
+            "periodOverride": "auto",
+            "widgets": [
+              {
+                "height": 6,
+                "width": 12,
+                "y": 6,
+                "x": 0,
+                "type": "metric",
+                "properties": {
+                  "metrics": [
+                    [ "AWS/Lambda", "Duration", "FunctionName", "${PrepareDatasetFunction}", { "label": "P100", "stat": "Maximum" } ],
+                    [ "...", { "label": "P99", "stat": "p99" } ],
+                    [ "...", { "label": "P90", "stat": "p90" } ]
+                  ],
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "region": "${AWS::Region}",
+                  "stat": "p99",
+                  "period": 60,
+                  "title": "Lambda Duration"
+                }
+              },
+              {
+                "height": 6,
+                "width": 12,
+                "y": 12,
+                "x": 0,
+                "type": "metric",
+                "properties": {
+                  "metrics": [
+                    [ "AWS/States", "ExecutionTime", "StateMachineArn", "${MarketDataMLPipelineStateMachine}/eecd5a47-582a-371f-8596-f08ae2a3fa2e", { "label": "P100", "stat": "Maximum" } ],
+                    [ "...", { "label": "P99", "stat": "p99" } ],
+                    [ "...", { "label": "P90", "stat": "p90" } ]
+                  ],
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "region": "${AWS::Region}",
+                  "stat": "p99",
+                  "period": 60,
+                  "title": "Step Functions ExecutionTime"
+                }
+              },
+              {
+                "height": 6,
+                "width": 12,
+                "y": 0,
+                "x": 12,
+                "type": "metric",
+                "properties": {
+                  "metrics": [
+                    [ "AWS/Lambda", "ConcurrentExecutions", "FunctionName", "${PrepareDatasetFunction}", { "label": "Max ConcurrentExecutions" } ]
+                  ],
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "region": "${AWS::Region}",
+                  "stat": "Maximum",
+                  "period": 60,
+                  "title": "Lambda ConcurrentExecutions"
+                }
+              },
+              {
+                "height": 6,
+                "width": 12,
+                "x": 12,
+                "y": 12,
+                "type": "metric",
+                "properties": {
+                  "metrics": [
+                    [ "AWS/States", "ExecutionsFailed", "StateMachineArn", "${MarketDataMLPipelineStateMachine}/eecd5a47-582a-371f-8596-f08ae2a3fa2e" ],
+                    [ ".", "ExecutionsStarted", ".", "." ],
+                    [ ".", "ExecutionsAborted", ".", "." ],
+                    [ ".", "ExecutionsSucceeded", ".", "." ],
+                    [ ".", "ExecutionsTimedOut", ".", "." ]
+                  ],
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "region": "${AWS::Region}",
+                  "stat": "Sum",
+                  "period": 60,
+                  "title": "Step Functions ExecutionsSucceeded"
+                }
+              },
+              {
+                "height": 6,
+                "width": 12,
+                "y": 0,
+                "x": 0,
+                "type": "metric",
+                "properties": {
+                  "metrics": [
+                    [ "AWS/Lambda", "Invocations", "FunctionName", "${PrepareDatasetFunction}"],
+                    [ ".", "Errors", ".", "." ],
+                    [ ".", "Throttles", ".", "." ]
+                  ],
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "region": "${AWS::Region}",
+                  "period": 60,
+                  "stat": "Sum",
+                  "title": "Lambda Errors, Invocations",
+                  "setPeriodToTimeRange": true
+                }
+              },
+              {
+                "type": "metric",
+                "x": 12,
+                "y": 6,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                    "metrics": [
+                        [ "API312", "SuccessfulDatasetPreparation" ]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWS::Region}",
+                    "period": 60,
+                    "stat": "Sum",
+                    "title": "SuccessfulDatasetPreparation"
+                }
+              }
+            ]
+          }
+
+##########################################################################
+#   Outputs                                                              #
+##########################################################################
+Outputs:
+  MarketDataSourceS3BucketName:
+    Description: "market data source Amazon S3 bucket name"
+    Value: !Ref MarketDataSourceS3Bucket
+  MarketDataTargetS3BucketName:
+    Description: "market data target Amazon S3 bucket name"
+    Value: !Ref MarketDataTargetS3Bucket
+  MarketDataMLPipelineStateMachine:
+    Description: "The MarketDataML Step Functions state machine ARN"
+    Value: !Sub "${MarketDataMLPipelineStateMachine.Arn}"
+  MarketDataMLPipelineStateMachineAWSConsoleLink:
+    Description: "AWS Console link to the MarketDataML Step Functions state machine"
+    Value: !Sub "https://console.aws.amazon.com/states/home?#/statemachines/view/${MarketDataMLPipelineStateMachine.Arn}"

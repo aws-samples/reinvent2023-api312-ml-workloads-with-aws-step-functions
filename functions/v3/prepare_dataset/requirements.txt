@@ -1,0 +1,3 @@
+aws-lambda-powertools == 2.27.0
+boto3 == 1.28.80
+pandas == 2.1.2

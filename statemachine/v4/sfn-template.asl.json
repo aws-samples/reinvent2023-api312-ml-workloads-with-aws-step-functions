@@ -1,0 +1,73 @@
+{
+  "Comment": "AWS re:invent 2023 API312 - v4",
+  "StartAt": "Prepare Sourced Data",
+  "States": {
+    "Prepare Sourced Data": {
+      "Type": "Map",
+      "MaxConcurrency": 1000,
+      "ItemBatcher": {
+        "MaxItemsPerBatch": 100
+      },
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:getObject",
+        "Parameters": {
+          "Bucket": "${S3SourceBucket}",
+          "Key.$": "$.Key"
+        },
+        "ReaderConfig": {
+          "InputType": "MANIFEST"
+        }
+      },
+      "ResultWriter": {
+        "Resource": "arn:aws:states:::s3:putObject",
+        "Parameters": {
+          "Bucket": "${S3TargetBucket}",
+          "Prefix.$": "States.Format('execution-summary/{}', $.Key)"
+        }
+      },
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "DISTRIBUTED",
+          "ExecutionType": "EXPRESS"
+        },
+        "StartAt": "Pre Process",
+        "States": {
+          "Pre Process": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${PassThroughFunction}:live",
+              "Payload.$": "$"
+            },
+            "OutputPath": "$.Payload",
+            "Next": "Prepare Dataset"
+          },
+          "Prepare Dataset": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${PrepareDatasetFunction}:live",
+              "Payload.$": "$"
+            },
+            "OutputPath": "$.Payload",
+            "Next": "Publish Event"
+          },
+          "Publish Event": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sns:publish",
+            "Parameters": {
+              "Message.$": "States.Format('prepared-dataset/{}', $.Key)",
+              "TopicArn": "${SNSTopic}"
+            },
+            "ResultPath": null,
+            "End": true
+          }
+        }
+      },
+      "Next": "Finish"
+    },
+    "Finish": {
+      "Type": "Succeed"
+    }
+  }
+}
