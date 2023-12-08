@@ -207,7 +207,7 @@ You should see the following output:
     25                                                                >         "Resource": "arn:aws:states:::s3:putObject",
     26                                                                >         "Parameters": {
     27                                                                >           "Bucket": "${S3TargetBucket}",
-    28                                                                >           "Prefix.$": "States.Format('execution-summary/{}', 
+    28                                                                >           "Prefix.$": "States.Format('execution-summary/{}', $.Prefix)"
     29                                                                >         }
     30                                                                >       },
     33            "Mode": "INLINE"                                    |           "Mode": "DISTRIBUTED",
